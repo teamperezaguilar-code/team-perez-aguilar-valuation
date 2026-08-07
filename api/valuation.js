@@ -1,9 +1,4 @@
-// Deploy this as a Vercel serverless function at /api/valuation
-// Environment variable (set in Vercel dashboard, never in code):
-//   RENTCAST_API_KEY  — your RentCast API key
-
 export default async function handler(req, res) {
-  // Only accept POST requests from the landing page
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -15,8 +10,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // RentCast takes one combined address string, in the format
-    // "Street, City, State, Zip" — matches what the landing page collects.
     const url = new URL('https://api.rentcast.io/v1/avm/value');
     url.searchParams.set('address', address.trim());
 
@@ -35,6 +28,21 @@ export default async function handler(req, res) {
     const data = await rentcastResponse.json();
 
     if (data.price == null) {
+      return res.status(404).json({ error: 'No estimate available for this address' });
+    }
+
+    return res.status(200).json({
+      low: data.priceRangeLow,
+      high: data.priceRangeHigh,
+      value: data.price,
+      disclaimer: 'Automated valuation model estimate provided by RentCast. Not an appraisal. Actual market value can only be determined through an in-person evaluation.'
+    });
+
+  } catch (err) {
+    console.error('Valuation lookup failed:', err);
+    return res.status(502).json({ error: 'Unable to retrieve estimate right now' });
+  }
+}    if (data.price == null) {
       return res.status(404).json({ error: 'No estimate available for this address' });
     }
 
