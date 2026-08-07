@@ -1,6 +1,6 @@
 // Deploy this as a Vercel serverless function at /api/valuation
 // Environment variable (set in Vercel dashboard, never in code):
-//   ATTOM_API_KEY  — your ATTOM Cloud trial (or production) API key
+//   RENTCAST_API_KEY  — your RentCast API key
 
 export default async function handler(req, res) {
   // Only accept POST requests from the landing page
@@ -14,49 +14,35 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'A valid address is required' });
   }
 
-  // ATTOM's AVM endpoint wants the street address and the city/state/zip
-  // as two separate parameters. The landing page collects one combined
-  // field, so split on the first comma:
-  //   "1234 Ventura Blvd, Sherman Oaks, CA" ->
-  //   address1 = "1234 Ventura Blvd"
-  //   address2 = "Sherman Oaks, CA"
-  const trimmed = address.trim();
-  const firstComma = trimmed.indexOf(',');
-  const address1 = firstComma === -1 ? trimmed : trimmed.slice(0, firstComma).trim();
-  const address2 = firstComma === -1 ? '' : trimmed.slice(firstComma + 1).trim();
-
   try {
-    const url = new URL('https://api.gateway.attomdata.com/propertyapi/v1.0.0/avm/detail');
-    url.searchParams.set('address1', address1);
-    url.searchParams.set('address2', address2);
+    // RentCast takes one combined address string, in the format
+    // "Street, City, State, Zip" — matches what the landing page collects.
+    const url = new URL('https://api.rentcast.io/v1/avm/value');
+    url.searchParams.set('address', address.trim());
 
-    const attomResponse = await fetch(url.toString(), {
+    const rentcastResponse = await fetch(url.toString(), {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
-        'apikey': process.env.ATTOM_API_KEY
+        'X-Api-Key': process.env.RENTCAST_API_KEY
       }
     });
 
-    if (!attomResponse.ok) {
-      throw new Error(`ATTOM returned ${attomResponse.status}`);
+    if (!rentcastResponse.ok) {
+      throw new Error(`RentCast returned ${rentcastResponse.status}`);
     }
 
-    const data = await attomResponse.json();
+    const data = await rentcastResponse.json();
 
-    // ATTOM's response nests the value inside property[0].avm.amount
-    const propertyRecord = data.property && data.property[0];
-    const avmAmount = propertyRecord && propertyRecord.avm && propertyRecord.avm.amount;
-
-    if (!avmAmount || avmAmount.value == null) {
+    if (data.price == null) {
       return res.status(404).json({ error: 'No estimate available for this address' });
     }
 
     return res.status(200).json({
-      low: avmAmount.low,
-      high: avmAmount.high,
-      value: avmAmount.value,
-      disclaimer: 'Automated valuation model estimate provided by ATTOM Data Solutions. Not an appraisal. Actual market value can only be determined through an in-person evaluation.'
+      low: data.priceRangeLow,
+      high: data.priceRangeHigh,
+      value: data.price,
+      disclaimer: 'Automated valuation model estimate provided by RentCast. Not an appraisal. Actual market value can only be determined through an in-person evaluation.'
     });
 
   } catch (err) {
